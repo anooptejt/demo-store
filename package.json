@@ -1,0 +1,14 @@
+{
+  "name": "demo-store",
+  "version": "1.0.0",
+  "description": "Sample storefront (Node backend and a small web UI) used to demo onboarding with ZenseAI AIDLC Centre.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
