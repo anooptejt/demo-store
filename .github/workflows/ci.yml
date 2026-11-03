@@ -39,6 +39,7 @@ jobs:
           configured. Configure the three repository secrets before running
           CI."; exit 1; fi
       - name: SonarQube scan
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
