@@ -1,0 +1,91 @@
+name: AIDLC build and publish
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - k8s/**
+  workflow_dispatch: null
+permissions:
+  contents: read
+  checks: write
+concurrency:
+  group: aidlc-main
+  cancel-in-progress: false
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Build
+        run: npm run build --if-present
+      - name: Test
+        run: npm test
+      - name: Require SonarQube configuration
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONARQUBE_URL }}
+          SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ secrets.SONARQUBE_PROJECT_KEY }}
+        run: if [ -z "$SONAR_HOST_URL" ] || [ -z "$SONAR_TOKEN" ] || [ -z
+          "$SONAR_PROJECT_KEY" ]; then echo "::error::SonarQube is not
+          configured. Configure the three repository secrets before running
+          CI."; exit 1; fi
+      - name: SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONARQUBE_URL }}
+        with:
+          args: -Dsonar.projectKey=${{ secrets.SONARQUBE_PROJECT_KEY }}
+      - id: meta
+        shell: bash
+        run: >
+          VERSION=$(node -p "require('./package.json').version")
+
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9.-]+)?$ ]] ||
+          exit 1
+
+          echo "tag=$VERSION-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_ROBOT_USER }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: quay.io/anoop_thotapalli/demo-store:${{ steps.meta.outputs.tag }}
+          build-args: GIT_SHA=${{ github.sha }}
+      - name: Record published image
+        uses: actions/github-script@v7
+        env:
+          AIDLC_IMAGE: quay.io/anoop_thotapalli/demo-store:${{ steps.meta.outputs.tag }}
+          AIDLC_TAG: ${{ steps.meta.outputs.tag }}
+        with:
+          script: >
+            const image = process.env.AIDLC_IMAGE;
+
+            const tag = process.env.AIDLC_TAG;
+
+            await core.summary.addHeading('Published
+            image').addCodeBlock(JSON.stringify({ image, tag }),
+            'json').write();
+
+            await github.rest.checks.create({
+              ...context.repo, name: 'aidlc/image', head_sha: context.sha,
+              status: 'completed', conclusion: 'success',
+              output: { title: 'Image published', summary: JSON.stringify({ image, tag, runId: String(context.runId) }) }
+            });
+    timeout-minutes: 30
