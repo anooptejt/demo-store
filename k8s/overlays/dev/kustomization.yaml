@@ -5,4 +5,4 @@ resources:
   - ../../base
 images:
   - name: quay.io/anoop_thotapalli/demo-store
-    newTag: pending-ci
+    newTag: 1.0.0-43c7d04
